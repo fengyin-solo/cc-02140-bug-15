@@ -531,6 +531,8 @@ async function handleBorrowSubmit() {
       cardNo: reader.cardNo,
       bookId: book.id,
       bookTitle: book.title,
+      categoryId: book.categoryId,
+      categoryName: book.categoryName,
       isbn: book.isbn
     })
 

@@ -1,24 +1,53 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { borrowRecords as initialRecords } from '@/data/mockData'
+import { books as initialBooks } from '@/data/mockData'
 
 const STORAGE_KEY = 'library_borrow_records'
+
+// 图书 id -> 分类归属，用于保证借阅记录的分类口径与图书数据一致
+function buildCategoryMap() {
+  const map = new Map()
+  initialBooks.forEach(book => {
+    map.set(book.id, {
+      categoryId: book.categoryId,
+      categoryName: book.categoryName
+    })
+  })
+  return map
+}
+
+const categoryMap = buildCategoryMap()
+
+// 为历史数据（缺少分类字段的借阅记录）补全分类归属
+function withCategory(record) {
+  if (record.categoryId != null && record.categoryName) return record
+  const category = categoryMap.get(record.bookId)
+  return category ? { ...record, ...category } : { ...record }
+}
+
+function parseRecords(raw) {
+  const parsed = JSON.parse(raw)
+  if (!Array.isArray(parsed)) throw new Error('借阅记录数据格式错误')
+  return parsed.map(withCategory)
+}
 
 export const useBorrowStore = defineStore('borrow', () => {
   const loadRecords = () => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
-        return JSON.parse(stored)
+        return parseRecords(stored)
       } catch (e) {
         console.error('Failed to parse stored records:', e)
       }
     }
-    return [...initialRecords]
+    return initialRecords.map(withCategory)
   }
 
   const records = ref(loadRecords())
   const loading = ref(false)
+  const error = ref('')
 
   watch(records, (newRecords) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newRecords))
@@ -60,7 +89,8 @@ export const useBorrowStore = defineStore('borrow', () => {
       dueDate: dueDate.toISOString().split('T')[0],
       returnDate: null,
       status: 'borrowed',
-      renewCount: 0
+      renewCount: 0,
+      ...(record.categoryId != null ? {} : (categoryMap.get(record.bookId) || {}))
     })
     return newId
   }
@@ -87,6 +117,38 @@ export const useBorrowStore = defineStore('borrow', () => {
     return false
   }
 
+  // 删除借阅记录：所有概览区域均基于 records 派生，删除后同步更新
+  function deleteRecord(id) {
+    const index = records.value.findIndex(record => record.id === id)
+    if (index !== -1) {
+      records.value.splice(index, 1)
+      return true
+    }
+    return false
+  }
+
+  // 重新加载数据，明确区分加载中与加载失败
+  async function reloadRecords() {
+    loading.value = true
+    error.value = ''
+    try {
+      await new Promise(resolve => setTimeout(resolve, 400))
+      const stored = localStorage.getItem(STORAGE_KEY)
+      if (stored) {
+        records.value = parseRecords(stored)
+      } else {
+        records.value = initialRecords.map(withCategory)
+      }
+      return true
+    } catch (e) {
+      error.value = '统计数据加载失败，请重试'
+      console.error('Failed to reload records:', e)
+      return false
+    } finally {
+      loading.value = false
+    }
+  }
+
   function searchRecords(keyword) {
     if (!keyword) return records.value
     const lowerKeyword = keyword.toLowerCase()
@@ -100,6 +162,7 @@ export const useBorrowStore = defineStore('borrow', () => {
   return {
     records,
     loading,
+    error,
     totalBorrowed,
     totalOverdue,
     todayBorrows,
@@ -108,6 +171,8 @@ export const useBorrowStore = defineStore('borrow', () => {
     addRecord,
     returnBook,
     renewBook,
+    deleteRecord,
+    reloadRecords,
     searchRecords
   }
 })

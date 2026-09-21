@@ -21,7 +21,7 @@
       >
         <a-menu-item key="dashboard">
           <template #icon><DashboardOutlined /></template>
-          <span>首页概览</span>
+          <span>运营概览</span>
         </a-menu-item>
         <a-menu-item key="books">
           <template #icon><BookOutlined /></template>
@@ -57,7 +57,7 @@
           />
           <a-breadcrumb class="breadcrumb">
             <a-breadcrumb-item>
-              <span class="breadcrumb-link" @click="$router.push('/dashboard')">首页</span>
+              <span class="breadcrumb-link" @click="$router.push('/dashboard')">运营概览</span>
             </a-breadcrumb-item>
             <a-breadcrumb-item>{{ currentTitle }}</a-breadcrumb-item>
           </a-breadcrumb>
@@ -123,7 +123,7 @@ const userInfo = computed(() => {
 
 const currentTitle = computed(() => {
   const titles = {
-    dashboard: '首页概览',
+    dashboard: '运营概览',
     books: '图书管理',
     readers: '读者管理',
     borrow: '借阅管理',
