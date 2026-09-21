@@ -2,6 +2,27 @@
   <div class="dashboard">
     <h2 class="page-title animate-fade-in">首页概览</h2>
 
+    <!-- 借阅数据加载失败：与零值明确区分 -->
+    <a-alert
+      v-if="borrowStore.loadError"
+      class="dashboard-error-alert"
+      type="error"
+      show-icon
+      message="借阅统计加载失败"
+      description="本地借阅记录数据异常，借出中 / 逾期未还及最近借阅暂不可用。"
+    >
+      <template #action>
+        <a-space>
+          <a-button size="small" @click="borrowStore.reload()">
+            <ReloadOutlined /> 重试
+          </a-button>
+          <a-button size="small" type="primary" @click="$router.push('/borrow')">
+            前往处理
+          </a-button>
+        </a-space>
+      </template>
+    </a-alert>
+
     <!-- 统计卡片 -->
     <a-row :gutter="[16, 16]" class="stat-row">
       <a-col :xs="24" :sm="12" :lg="6">
@@ -29,13 +50,14 @@
         </div>
       </a-col>
       <a-col :xs="24" :sm="12" :lg="6">
+        <!-- 借出中 / 逾期未还与借阅管理页共用同一筛选条件与统计口径 -->
         <div class="stat-card warning animate-slide-up" style="animation-delay: 0.3s">
           <div class="stat-icon pulse-animation">
             <SwapOutlined />
           </div>
           <div class="stat-info">
-            <div class="stat-value count-up">{{ borrowStore.totalBorrowed }}</div>
-            <div class="stat-label">借出中</div>
+            <div class="stat-value count-up">{{ dashboardSummary.borrowed }}</div>
+            <div class="stat-label">借出中{{ filterStore.hasFilter ? '（当前范围）' : '' }}</div>
           </div>
           <div class="stat-card-bg"></div>
         </div>
@@ -46,17 +68,35 @@
             <WarningOutlined />
           </div>
           <div class="stat-info">
-            <div class="stat-value count-up">{{ borrowStore.totalOverdue }}</div>
-            <div class="stat-label">逾期未还</div>
+            <div class="stat-value count-up">{{ dashboardSummary.overdue }}</div>
+            <div class="stat-label">逾期未还{{ filterStore.hasFilter ? '（当前范围）' : '' }}</div>
           </div>
           <div class="stat-card-bg"></div>
         </div>
       </a-col>
     </a-row>
 
+    <!-- 当前生效范围提示：说明卡片数字与借阅管理页口径一致，返回后范围保持 -->
+    <transition name="fade-slide">
+      <div v-if="filterStore.hasFilter" class="active-filter-bar">
+        <span class="active-filter-label">
+          <FilterOutlined /> 当前统计范围：
+        </span>
+        <a-tag v-if="filterStore.keyword" color="blue">关键词：{{ filterStore.keyword }}</a-tag>
+        <a-tag v-if="filterStore.status" color="blue">{{ statusText(filterStore.status) }}</a-tag>
+        <a-tag v-if="filterStore.categoryId" color="blue">
+          {{ categoryNameById(filterStore.categoryId) }}
+        </a-tag>
+        <a-tag v-if="rangeText" color="blue">{{ rangeText }}</a-tag>
+        <a-button type="link" size="small" @click="$router.push('/borrow')">
+          在借阅管理中查看 <RightOutlined />
+        </a-button>
+      </div>
+    </transition>
+
     <!-- 借阅记录和分类统计 -->
     <a-row :gutter="[16, 16]">
-      <!-- 最近借阅 -->
+      <!-- 最近借阅（与借阅管理页同口径） -->
       <a-col :xs="24" :lg="16">
         <div class="card-container equal-height animate-fade-in" style="animation-delay: 0.5s">
           <div class="card-header">
@@ -68,7 +108,14 @@
             </a-button>
           </div>
           <div class="card-body">
-            <div class="borrow-list">
+            <!-- 空数据：明确提示，区域不消失，区别于加载失败 -->
+            <div v-if="recentBorrows.length === 0 && !borrowStore.loadError" class="inline-empty">
+              <a-empty
+                :image="emptyImage"
+                :description="filterStore.hasFilter ? '当前统计范围内暂无借阅记录' : '暂无借阅记录'"
+              />
+            </div>
+            <div v-else class="borrow-list">
               <transition-group name="list" tag="div">
                 <div
                   v-for="(record, index) in recentBorrows"
@@ -91,8 +138,8 @@
                   </div>
                   <div class="borrow-meta">
                     <span class="borrow-date">{{ record.borrowDate }}</span>
-                    <a-tag :color="getStatusColor(record.status)" size="small" class="status-tag">
-                      {{ getStatusText(record.status) }}
+                    <a-tag :color="getStatusColor(effectiveStatus(record))" size="small" class="status-tag">
+                      {{ getStatusText(effectiveStatus(record)) }}
                     </a-tag>
                   </div>
                 </div>
@@ -111,7 +158,11 @@
             </h3>
           </div>
           <div class="card-body category-body">
-            <div class="category-list">
+            <!-- 零值空态：没有分类时区域保留并提示 -->
+            <div v-if="topCategories.length === 0" class="inline-empty">
+              <a-empty :image="emptyImage" description="暂无分类数据" />
+            </div>
+            <div v-else class="category-list">
               <div
                 v-for="(cat, index) in topCategories"
                 :key="cat.id"
@@ -142,46 +193,52 @@
       </a-col>
     </a-row>
 
-    <!-- 热门图书 -->
+    <!-- 热门图书（排序规则保持不变） -->
     <div class="card-container animate-fade-in" style="margin-top: 16px; animation-delay: 0.7s">
       <div class="card-header">
         <h3 class="card-title">
           <FireOutlined class="icon-fire" /> 热门图书推荐
         </h3>
       </div>
-      <a-row :gutter="[16, 16]">
-        <a-col
-          v-for="(book, index) in hotBooks"
-          :key="book.id"
-          :xs="24"
-          :sm="12"
-          :md="8"
-          :lg="6"
-        >
-          <div class="book-card">
-            <div class="book-cover">
-              <img :src="book.cover" :alt="book.title" />
-            </div>
-            <div class="book-info">
-              <h4 class="book-title">{{ book.title }}</h4>
-              <p class="book-author">{{ book.author }}</p>
-              <div class="book-meta">
-                <a-tag color="blue" class="category-tag">{{ book.categoryName }}</a-tag>
-                <span class="book-available">
-                  <span class="stock-icon">📚</span>
-                  {{ book.available }}/{{ book.total }}
-                </span>
+      <div class="card-body">
+        <div v-if="hotBooks.length === 0" class="inline-empty">
+          <a-empty :image="emptyImage" description="暂无热门图书" />
+        </div>
+        <a-row v-else :gutter="[16, 16]">
+          <a-col
+            v-for="(book, index) in hotBooks"
+            :key="book.id"
+            :xs="24"
+            :sm="12"
+            :md="8"
+            :lg="6"
+          >
+            <div class="book-card">
+              <div class="book-cover">
+                <img :src="book.cover" :alt="book.title" />
+              </div>
+              <div class="book-info">
+                <h4 class="book-title">{{ book.title }}</h4>
+                <p class="book-author">{{ book.author }}</p>
+                <div class="book-meta">
+                  <a-tag color="blue" class="category-tag">{{ book.categoryName }}</a-tag>
+                  <span class="book-available">
+                    <span class="stock-icon">📚</span>
+                    {{ book.available }}/{{ book.total }}
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
-        </a-col>
-      </a-row>
+          </a-col>
+        </a-row>
+      </div>
     </div>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { Empty } from 'ant-design-vue'
 import {
   BookOutlined,
   UserOutlined,
@@ -190,20 +247,56 @@ import {
   HistoryOutlined,
   RightOutlined,
   PieChartOutlined,
-  FireOutlined
+  FireOutlined,
+  ReloadOutlined,
+  FilterOutlined
 } from '@ant-design/icons-vue'
 import { useBookStore } from '@/stores/book'
 import { useReaderStore } from '@/stores/reader'
 import { useBorrowStore } from '@/stores/borrow'
+import { useBorrowFilterStore } from '@/stores/borrowFilter'
 import { useCategoryStore } from '@/stores/category'
+import {
+  effectiveStatus,
+  getStatusColor,
+  getStatusText,
+  filterBorrowRecords,
+  summarizeRecords
+} from '@/utils/borrowStats'
 
 const bookStore = useBookStore()
 const readerStore = useReaderStore()
 const borrowStore = useBorrowStore()
+const filterStore = useBorrowFilterStore()
 const categoryStore = useCategoryStore()
 
+const emptyImage = Empty.PRESENTED_IMAGE_SIMPLE
+
+// 分类归属与借阅管理页保持一致：按图书当前 categoryId 关联
+const categoryOfBook = computed(() => {
+  const map = new Map()
+  for (const book of bookStore.books) {
+    map.set(book.id, book.categoryId)
+  }
+  return map
+})
+
+// 与借阅管理页完全相同的过滤结果（日期范围 / 状态 / 分类 / 关键词）
+const dashboardRecords = computed(() => {
+  if (borrowStore.loadError) return []
+  return filterBorrowRecords(borrowStore.records, {
+    keyword: filterStore.keyword,
+    status: filterStore.status,
+    dateRange: filterStore.dateRange,
+    categoryId: filterStore.categoryId
+  }, categoryOfBook.value)
+})
+
+// 同一份汇总：卡片与明细数量必然对得上
+const dashboardSummary = computed(() => summarizeRecords(dashboardRecords.value))
+
 const recentBorrows = computed(() => {
-  return [...borrowStore.records]
+  return [...dashboardRecords.value]
     .sort((a, b) => new Date(b.borrowDate) - new Date(a.borrowDate))
     .slice(0, 5)
 })
@@ -217,32 +310,29 @@ const maxBookCount = computed(() => {
   return Math.max(...counts, 1)
 })
 
+// 热门图书排序规则保持不变
 const hotBooks = computed(() => {
   return bookStore.books.slice(0, 4)
 })
+
+const rangeText = computed(() => {
+  const range = filterStore.dateRange
+  if (!range || range.length !== 2 || !range[0] || !range[1]) return ''
+  return `${range[0].format('YYYY-MM-DD')} ~ ${range[1].format('YYYY-MM-DD')}`
+})
+
+function categoryNameById(id) {
+  return categoryStore.getCategoryById(id)?.name || '未分类'
+}
+
+function statusText(status) {
+  return getStatusText(status)
+}
 
 const avatarColors = ['#1890ff', '#52c41a', '#faad14', '#722ed1', '#eb2f96', '#13c2c2']
 
 function getAvatarColor(id) {
   return avatarColors[(id - 1) % avatarColors.length]
-}
-
-function getStatusColor(status) {
-  const colors = {
-    borrowed: 'processing',
-    returned: 'success',
-    overdue: 'error'
-  }
-  return colors[status] || 'default'
-}
-
-function getStatusText(status) {
-  const texts = {
-    borrowed: '借阅中',
-    returned: '已归还',
-    overdue: '已逾期'
-  }
-  return texts[status] || status
 }
 
 const progressColors = ['#1890ff', '#52c41a', '#faad14', '#722ed1', '#eb2f96', '#13c2c2', '#fa541c', '#2f54eb']
@@ -332,6 +422,49 @@ function getProgressColor(id) {
 
 @keyframes expandWidth {
   to { width: 100%; }
+}
+
+.dashboard-error-alert {
+  margin-bottom: 16px;
+  border-radius: 12px;
+}
+
+.active-filter-bar {
+  background: #fff;
+  border: 1px dashed #91d5ff;
+  border-radius: 12px;
+  padding: 10px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  .active-filter-label {
+    font-size: 13px;
+    color: #666;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+}
+
+.fade-slide-enter-active,
+.fade-slide-leave-active {
+  transition: all 0.3s ease;
+}
+
+.fade-slide-enter-from,
+.fade-slide-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+.inline-empty {
+  padding: 32px 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .stat-row {

@@ -1,35 +1,57 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { borrowRecords as initialRecords } from '@/data/mockData'
+import { effectiveStatus } from '@/utils/borrowStats'
 
 const STORAGE_KEY = 'library_borrow_records'
 
 export const useBorrowStore = defineStore('borrow', () => {
+  // loading: 正在加载（与“加载失败”“零数据”三态互斥）
+  const loading = ref(false)
+  // loadError: 加载失败，需要与空数据（records 正常但长度为 0）明确区分
+  const loadError = ref(false)
+
   const loadRecords = () => {
     const stored = localStorage.getItem(STORAGE_KEY)
     if (stored) {
       try {
-        return JSON.parse(stored)
+        const parsed = JSON.parse(stored)
+        if (!Array.isArray(parsed)) throw new Error('借阅记录数据格式不正确')
+        loadError.value = false
+        return parsed
       } catch (e) {
         console.error('Failed to parse stored records:', e)
+        loadError.value = true
+        return []
       }
     }
+    loadError.value = false
     return [...initialRecords]
   }
 
   const records = ref(loadRecords())
-  const loading = ref(false)
 
   watch(records, (newRecords) => {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(newRecords))
   }, { deep: true })
 
+  // 重新加载（失败后可重试）；纯前端环境用一次微任务模拟加载过程
+  function reload() {
+    loading.value = true
+    loadError.value = false
+    setTimeout(() => {
+      records.value = loadRecords()
+      loading.value = false
+    }, 300)
+  }
+
+  // 全局口径下的统计（不携带任何筛选条件）
   const totalBorrowed = computed(() =>
-    records.value.filter(r => r.status === 'borrowed').length
+    records.value.filter(r => effectiveStatus(r) === 'borrowed').length
   )
 
   const totalOverdue = computed(() =>
-    records.value.filter(r => r.status === 'overdue').length
+    records.value.filter(r => effectiveStatus(r) === 'overdue').length
   )
 
   const todayBorrows = computed(() => {
@@ -82,6 +104,20 @@ export const useBorrowStore = defineStore('borrow', () => {
       newDueDate.setDate(newDueDate.getDate() + 15)
       records.value[index].dueDate = newDueDate.toISOString().split('T')[0]
       records.value[index].renewCount += 1
+      // 续借后若尚未到新的应还日期，状态恢复为借阅中
+      if (effectiveStatus(records.value[index]) === 'borrowed') {
+        records.value[index].status = 'borrowed'
+      }
+      return true
+    }
+    return false
+  }
+
+  // 删除借阅记录（删除后各入口的统计必须同步减少）
+  function deleteRecord(id) {
+    const index = records.value.findIndex(record => record.id === id)
+    if (index !== -1) {
+      records.value.splice(index, 1)
       return true
     }
     return false
@@ -100,6 +136,8 @@ export const useBorrowStore = defineStore('borrow', () => {
   return {
     records,
     loading,
+    loadError,
+    reload,
     totalBorrowed,
     totalOverdue,
     todayBorrows,
@@ -108,6 +146,7 @@ export const useBorrowStore = defineStore('borrow', () => {
     addRecord,
     returnBook,
     renewBook,
+    deleteRecord,
     searchRecords
   }
 })

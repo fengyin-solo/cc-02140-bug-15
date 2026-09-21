@@ -2,243 +2,335 @@
   <div class="borrow-list">
     <h2 class="page-title">借阅管理</h2>
 
-    <!-- 统计卡片 - 丰富内容 -->
-    <a-row :gutter="[16, 16]" class="stat-row">
-      <a-col :xs="12" :sm="12" :md="6">
-        <div class="stat-card-rich total">
-          <div class="stat-card-header">
-            <div class="stat-card-icon">
-              <DatabaseOutlined />
-            </div>
-            <div class="stat-card-trend up">
-              <RiseOutlined />
-              <span>{{ todayBorrowCount }}</span>
-            </div>
-          </div>
-          <div class="stat-card-body">
-            <div class="stat-card-value">{{ filteredRecords.length }}</div>
-            <div class="stat-card-label">总记录</div>
-          </div>
-          <div class="stat-card-footer">
-            <span>今日新增 {{ todayBorrowCount }} 条</span>
-          </div>
-        </div>
-      </a-col>
-      <a-col :xs="12" :sm="12" :md="6">
-        <div class="stat-card-rich borrowed">
-          <div class="stat-card-header">
-            <div class="stat-card-icon">
-              <BookOutlined />
-            </div>
-            <div class="stat-card-badge">
-              <ClockCircleOutlined />
-            </div>
-          </div>
-          <div class="stat-card-body">
-            <div class="stat-card-value">{{ filteredTotalBorrowed }}</div>
-            <div class="stat-card-label">借阅中</div>
-          </div>
-          <div class="stat-card-footer">
-            <a-progress
-              :percent="borrowedPercent"
-              :show-info="false"
-              stroke-color="#1890ff"
-              size="small"
-            />
-            <span>占比 {{ borrowedPercent }}%</span>
-          </div>
-        </div>
-      </a-col>
-      <a-col :xs="12" :sm="12" :md="6">
-        <div class="stat-card-rich returned">
-          <div class="stat-card-header">
-            <div class="stat-card-icon">
-              <CheckCircleOutlined />
-            </div>
-            <div class="stat-card-badge success">
-              <SmileOutlined />
-            </div>
-          </div>
-          <div class="stat-card-body">
-            <div class="stat-card-value">{{ returnedCount }}</div>
-            <div class="stat-card-label">已归还</div>
-          </div>
-          <div class="stat-card-footer">
-            <a-progress
-              :percent="returnedPercent"
-              :show-info="false"
-              stroke-color="#52c41a"
-              size="small"
-            />
-            <span>归还率 {{ returnedPercent }}%</span>
-          </div>
-        </div>
-      </a-col>
-      <a-col :xs="12" :sm="12" :md="6">
-        <div class="stat-card-rich overdue">
-          <div class="stat-card-header">
-            <div class="stat-card-icon">
-              <ExclamationCircleOutlined />
-            </div>
-            <div class="stat-card-badge warning" v-if="filteredTotalOverdue > 0">
-              <WarningOutlined />
-            </div>
-          </div>
-          <div class="stat-card-body">
-            <div class="stat-card-value">{{ filteredTotalOverdue }}</div>
-            <div class="stat-card-label">已逾期</div>
-          </div>
-          <div class="stat-card-footer">
-            <span v-if="filteredTotalOverdue > 0" class="warning-text">
-              <AlertOutlined /> 请及时处理
-            </span>
-            <span v-else class="success-text">
-              <CheckOutlined /> 暂无逾期
-            </span>
-          </div>
-        </div>
-      </a-col>
-    </a-row>
-
-    <!-- 搜索区域 -->
-    <div class="search-area animate-slide-down">
-      <a-row :gutter="16" align="middle">
-        <a-col :xs="24" :sm="12" :md="8" :lg="6">
-          <div class="search-input-wrapper">
-            <a-input
-              v-model:value="searchKeyword"
-              placeholder="搜索读者、图书、卡号"
-              allow-clear
-              @input="onSearchInput"
-              class="search-input"
-            >
-              <template #suffix>
-                <SearchOutlined 
-                  :class="['search-icon', { 'searching': isSearching }]" 
-                />
-              </template>
-            </a-input>
-          </div>
-        </a-col>
-        <a-col :xs="24" :sm="12" :md="8" :lg="6">
-          <a-select
-            v-model:value="selectedStatus"
-            placeholder="选择状态"
-            allow-clear
-            style="width: 100%"
-            @change="handleStatusChange"
-          >
-            <a-select-option value="borrowed">借阅中</a-select-option>
-            <a-select-option value="returned">已归还</a-select-option>
-            <a-select-option value="overdue">已逾期</a-select-option>
-          </a-select>
-        </a-col>
-        <a-col :xs="24" :sm="24" :md="8" :lg="12" style="text-align: right;">
-          <a-button type="primary" @click="showBorrowModal" class="add-btn">
-            <PlusOutlined /> 新增借阅
+    <!-- 加载失败：与零值/空数据明确区分 -->
+    <a-alert
+      v-if="borrowStore.loadError"
+      class="error-alert"
+      type="error"
+      show-icon
+      message="借阅数据加载失败"
+      description="本地借阅记录数据已损坏，暂时无法统计。可点击“重试”重新加载，或恢复为系统默认数据。"
+    >
+      <template #action>
+        <a-space>
+          <a-button size="small" @click="borrowStore.reload()">
+            <ReloadOutlined /> 重试
           </a-button>
-        </a-col>
-      </a-row>
-      <a-row :gutter="16" align="middle" style="margin-top: 16px;">
-        <a-col :xs="24" :sm="12" :md="8" :lg="6">
-          <a-range-picker
-            v-model:value="dateRange"
-            :placeholder="['开始日期', '结束日期']"
-            allow-clear
-            style="width: 100%"
-            @change="handleDateRangeChange"
-          >
-            <template #suffixIcon>
-              <CalendarOutlined />
-            </template>
-          </a-range-picker>
-        </a-col>
-        <a-col :xs="24" :sm="12" :md="16" :lg="18">
-          <span class="filter-hint">
-            <CalendarOutlined /> 按借阅日期筛选
-          </span>
-        </a-col>
-      </a-row>
-      
-      <!-- 搜索结果提示 -->
-      <transition name="fade-slide">
-        <div v-if="hasFilters" class="search-result-tip">
-          <span class="result-count">
-            找到 <strong>{{ filteredRecords.length }}</strong> 条结果
-          </span>
-          <a-button type="link" size="small" @click="clearFilters" class="clear-btn">
-            清除筛选
+          <a-button size="small" type="primary" @click="resetToDefault">
+            恢复默认数据
           </a-button>
-        </div>
-      </transition>
-    </div>
+        </a-space>
+      </template>
+    </a-alert>
 
-    <!-- 借阅表格 -->
-    <div :class="['table-container', 'animate-fade-in', { 'table-loading': tableAnimating }]">
-      <!-- 加载动画遮罩 -->
-      <transition name="fade">
-        <div v-if="tableAnimating" class="table-loading-overlay">
-          <div class="loading-spinner">
-            <div class="spinner-ring"></div>
-            <span>搜索中...</span>
+    <template v-else>
+      <!-- 统计卡片 - 与逾期分布、明细列表使用同一份 filteredRecords -->
+      <a-row :gutter="[16, 16]" class="stat-row">
+        <a-col :xs="12" :sm="12" :md="6">
+          <div class="stat-card-rich total">
+            <div class="stat-card-header">
+              <div class="stat-card-icon">
+                <DatabaseOutlined />
+              </div>
+              <div class="stat-card-trend up">
+                <RiseOutlined />
+                <span>{{ summary.todayBorrows }}</span>
+              </div>
+            </div>
+            <div class="stat-card-body">
+              <div class="stat-card-value">{{ summary.total }}</div>
+              <div class="stat-card-label">总记录</div>
+            </div>
+            <div class="stat-card-footer">
+              <span>今日新增 {{ summary.todayBorrows }} 条</span>
+            </div>
           </div>
-        </div>
-      </transition>
-      
-      <a-table
-        :columns="columns"
-        :data-source="filteredRecords"
-        :loading="loading"
-        row-key="id"
-        :pagination="{ pageSize: 10, showTotal: total => `共 ${total} 条` }"
-        :row-class-name="getRowClassName"
-      >
-        <template #bodyCell="{ column, record, index }">
-          <template v-if="column.key === 'reader'">
-            <div class="reader-cell" :style="{ animationDelay: `${index * 0.05}s` }">
-              <div class="text-primary">{{ record.readerName }}</div>
-              <div class="text-secondary">{{ record.cardNo }}</div>
+        </a-col>
+        <a-col :xs="12" :sm="12" :md="6">
+          <div class="stat-card-rich borrowed">
+            <div class="stat-card-header">
+              <div class="stat-card-icon">
+                <BookOutlined />
+              </div>
+              <div class="stat-card-badge">
+                <ClockCircleOutlined />
+              </div>
             </div>
-          </template>
-          <template v-else-if="column.key === 'book'">
-            <div class="book-cell">
-              <div class="text-primary">{{ record.bookTitle }}</div>
-              <div class="text-secondary">{{ record.isbn }}</div>
+            <div class="stat-card-body">
+              <div class="stat-card-value">{{ summary.borrowed }}</div>
+              <div class="stat-card-label">借阅中</div>
             </div>
-          </template>
-          <template v-else-if="column.key === 'status'">
-            <a-tag :color="getStatusColor(record.status)" :class="['status-tag', record.status]">
-              {{ getStatusText(record.status) }}
-            </a-tag>
-          </template>
-          <template v-else-if="column.key === 'action'">
-            <a-space>
-              <a-button
-                v-if="record.status === 'borrowed' || record.status === 'overdue'"
-                type="link"
+            <div class="stat-card-footer">
+              <a-progress
+                :percent="borrowedPercent"
+                :show-info="false"
+                stroke-color="#1890ff"
                 size="small"
-                class="table-action-btn return-btn"
-                @click="handleReturn(record)"
-              >
-                <CheckOutlined /> 归还
-              </a-button>
-              <a-button
-                v-if="record.status === 'borrowed' && record.renewCount < 2"
-                type="link"
+              />
+              <span>占比 {{ borrowedPercent }}%</span>
+            </div>
+          </div>
+        </a-col>
+        <a-col :xs="12" :sm="12" :md="6">
+          <div class="stat-card-rich returned">
+            <div class="stat-card-header">
+              <div class="stat-card-icon">
+                <CheckCircleOutlined />
+              </div>
+              <div class="stat-card-badge success">
+                <SmileOutlined />
+              </div>
+            </div>
+            <div class="stat-card-body">
+              <div class="stat-card-value">{{ summary.returned }}</div>
+              <div class="stat-card-label">已归还</div>
+            </div>
+            <div class="stat-card-footer">
+              <a-progress
+                :percent="returnedPercent"
+                :show-info="false"
+                stroke-color="#52c41a"
                 size="small"
-                class="table-action-btn renew-btn"
-                @click="handleRenew(record)"
-              >
-                <ReloadOutlined /> 续借
-              </a-button>
-              <span v-if="record.status === 'returned'" class="completed-text">
-                <CheckCircleOutlined /> 已完成
+              />
+              <span>归还率 {{ returnedPercent }}%</span>
+            </div>
+          </div>
+        </a-col>
+        <a-col :xs="12" :sm="12" :md="6">
+          <div class="stat-card-rich overdue">
+            <div class="stat-card-header">
+              <div class="stat-card-icon">
+                <ExclamationCircleOutlined />
+              </div>
+              <!-- 零值也保留徽标位，避免数字区域跳动；仅 >0 时高亮 -->
+              <div :class="['stat-card-badge', { warning: summary.overdue > 0 }]">
+                <WarningOutlined v-if="summary.overdue > 0" />
+                <CheckOutlined v-else />
+              </div>
+            </div>
+            <div class="stat-card-body">
+              <div class="stat-card-value">{{ summary.overdue }}</div>
+              <div class="stat-card-label">已逾期</div>
+            </div>
+            <div class="stat-card-footer">
+              <span v-if="summary.overdue > 0" class="warning-text">
+                <AlertOutlined /> 请及时处理
               </span>
-            </a-space>
+              <span v-else class="success-text">
+                <CheckOutlined /> 暂无逾期
+              </span>
+            </div>
+          </div>
+        </a-col>
+      </a-row>
+
+      <!-- 逾期分布：与卡片共用 filteredRecords / summary，数量必然一致 -->
+      <div class="overdue-panel">
+        <div class="overdue-panel-header">
+          <h3 class="overdue-panel-title">
+            <FieldTimeOutlined /> 逾期分布
+            <span class="overdue-panel-total">共 {{ summary.overdue }} 条逾期</span>
+          </h3>
+          <span class="overdue-panel-hint">按超过应还日期的整天数统计</span>
+        </div>
+        <a-row :gutter="[12, 12]">
+          <a-col
+            v-for="bucket in summary.overdueBuckets"
+            :key="bucket.key"
+            :xs="12"
+            :sm="12"
+            :md="6"
+          >
+            <div
+              :class="['overdue-bucket', { active: filterStore.status === 'overdue' }]"
+              @click="toggleOverdueBucket(bucket)"
+            >
+              <div class="overdue-bucket-top">
+                <span class="overdue-bucket-label">{{ bucket.label }}</span>
+                <!-- 零值显式展示 0，区域不消失 -->
+                <span class="overdue-bucket-count" :style="{ color: bucket.color }">
+                  {{ bucket.count }}
+                </span>
+              </div>
+              <a-progress
+                :percent="overdueBucketPercent(bucket.count)"
+                :show-info="false"
+                :stroke-color="bucket.color"
+                size="small"
+              />
+            </div>
+          </a-col>
+        </a-row>
+      </div>
+
+      <!-- 搜索区域 -->
+      <div class="search-area animate-slide-down">
+        <a-row :gutter="16" align="middle">
+          <a-col :xs="24" :sm="12" :md="6" :lg="6">
+            <div class="search-input-wrapper">
+              <a-input
+                :value="filterStore.keyword"
+                placeholder="搜索读者、图书、卡号"
+                allow-clear
+                @update:value="onKeywordInput"
+                class="search-input"
+              >
+                <template #suffix>
+                  <SearchOutlined
+                    :class="['search-icon', { 'searching': isSearching }]"
+                  />
+                </template>
+              </a-input>
+            </div>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6" :lg="5">
+            <a-select
+              :value="filterStore.status"
+              placeholder="选择状态"
+              allow-clear
+              style="width: 100%"
+              @change="handleStatusChange"
+            >
+              <a-select-option value="borrowed">借阅中</a-select-option>
+              <a-select-option value="returned">已归还</a-select-option>
+              <a-select-option value="overdue">已逾期</a-select-option>
+            </a-select>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="6" :lg="5">
+            <a-select
+              :value="filterStore.categoryId"
+              placeholder="选择图书分类"
+              allow-clear
+              style="width: 100%"
+              @change="handleCategoryChange"
+            >
+              <a-select-option
+                v-for="cat in categoryStore.categories"
+                :key="cat.id"
+                :value="cat.id"
+              >
+                {{ cat.name }}
+              </a-select-option>
+            </a-select>
+          </a-col>
+          <a-col :xs="24" :sm="24" :md="6" :lg="8" style="text-align: right;">
+            <a-button type="primary" @click="showBorrowModal" class="add-btn">
+              <PlusOutlined /> 新增借阅
+            </a-button>
+          </a-col>
+        </a-row>
+        <a-row :gutter="16" align="middle" style="margin-top: 16px;">
+          <a-col :xs="24" :sm="12" :md="10" :lg="10">
+            <a-range-picker
+              :value="filterStore.dateRange"
+              :placeholder="['开始日期', '结束日期']"
+              allow-clear
+              style="width: 100%"
+              @change="handleDateRangeChange"
+            >
+              <template #suffixIcon>
+                <CalendarOutlined />
+              </template>
+            </a-range-picker>
+          </a-col>
+          <a-col :xs="24" :sm="12" :md="14" :lg="14">
+            <span class="filter-hint">
+              <CalendarOutlined /> 按借阅日期筛选（含起止当天）
+            </span>
+          </a-col>
+        </a-row>
+
+        <!-- 搜索结果提示 -->
+        <transition name="fade-slide">
+          <div v-if="filterStore.hasFilter" class="search-result-tip">
+            <span class="result-count">
+              找到 <strong>{{ filteredRecords.length }}</strong> 条结果
+            </span>
+            <a-button type="link" size="small" @click="clearFilters" class="clear-btn">
+              清除筛选
+            </a-button>
+          </div>
+        </transition>
+      </div>
+
+      <!-- 借阅表格 -->
+      <div :class="['table-container', 'animate-fade-in', { 'table-loading': tableAnimating }]">
+        <!-- 加载动画遮罩（仅模拟筛选加载过程，区别于加载失败） -->
+        <transition name="fade">
+          <div v-if="tableAnimating" class="table-loading-overlay">
+            <div class="loading-spinner">
+              <div class="spinner-ring"></div>
+              <span>统计中...</span>
+            </div>
+          </div>
+        </transition>
+
+        <a-table
+          :columns="columns"
+          :data-source="filteredRecords"
+          :loading="borrowStore.loading"
+          row-key="id"
+          :pagination="{ pageSize: 10, showTotal: total => `共 ${total} 条` }"
+          :row-class-name="getRowClassName"
+          :locale="tableLocale"
+        >
+          <template #bodyCell="{ column, record, index }">
+            <template v-if="column.key === 'reader'">
+              <div class="reader-cell" :style="{ animationDelay: `${index * 0.05}s` }">
+                <div class="text-primary">{{ record.readerName }}</div>
+                <div class="text-secondary">{{ record.cardNo }}</div>
+              </div>
+            </template>
+            <template v-else-if="column.key === 'book'">
+              <div class="book-cell">
+                <div class="text-primary">{{ record.bookTitle }}</div>
+                <div class="text-secondary">{{ record.isbn }}</div>
+              </div>
+            </template>
+            <template v-else-if="column.key === 'category'">
+              <a-tag color="blue">{{ categoryNameOf(record.bookId) }}</a-tag>
+            </template>
+            <template v-else-if="column.key === 'status'">
+              <a-tag :color="getStatusColor(effectiveStatus(record))" :class="['status-tag', effectiveStatus(record)]">
+                {{ getStatusText(effectiveStatus(record)) }}
+              </a-tag>
+            </template>
+            <template v-else-if="column.key === 'action'">
+              <a-space>
+                <a-button
+                  v-if="effectiveStatus(record) === 'borrowed' || effectiveStatus(record) === 'overdue'"
+                  type="link"
+                  size="small"
+                  class="table-action-btn return-btn"
+                  @click="handleReturn(record)"
+                >
+                  <CheckOutlined /> 归还
+                </a-button>
+                <a-button
+                  v-if="effectiveStatus(record) === 'borrowed' && record.renewCount < 2"
+                  type="link"
+                  size="small"
+                  class="table-action-btn renew-btn"
+                  @click="handleRenew(record)"
+                >
+                  <ReloadOutlined /> 续借
+                </a-button>
+                <a-popconfirm
+                  title="确定要删除这条借阅记录吗？"
+                  :ok-text="deleteConfirmText"
+                  cancel-text="取消"
+                  @confirm="handleDelete(record)"
+                >
+                  <a-button type="link" size="small" danger class="table-action-btn delete-btn">
+                    <DeleteOutlined /> 删除
+                  </a-button>
+                </a-popconfirm>
+              </a-space>
+            </template>
           </template>
-        </template>
-      </a-table>
-    </div>
+        </a-table>
+      </div>
+    </template>
 
     <!-- 新增借阅弹窗 -->
     <a-modal
@@ -296,12 +388,13 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, nextTick } from 'vue'
+import { ref, reactive, computed, nextTick, h } from 'vue'
 import { message } from 'ant-design-vue'
 import {
   PlusOutlined,
   CheckOutlined,
   ReloadOutlined,
+  DeleteOutlined,
   DatabaseOutlined,
   BookOutlined,
   CheckCircleOutlined,
@@ -312,20 +405,30 @@ import {
   WarningOutlined,
   AlertOutlined,
   SearchOutlined,
-  CalendarOutlined
+  CalendarOutlined,
+  FieldTimeOutlined
 } from '@ant-design/icons-vue'
+import { Empty } from 'ant-design-vue'
 import { useBorrowStore } from '@/stores/borrow'
+import { useBorrowFilterStore } from '@/stores/borrowFilter'
 import { useReaderStore } from '@/stores/reader'
 import { useBookStore } from '@/stores/book'
+import { useCategoryStore } from '@/stores/category'
+import { borrowRecords as defaultRecords } from '@/data/mockData'
+import {
+  effectiveStatus,
+  getStatusColor,
+  getStatusText,
+  filterBorrowRecords,
+  summarizeRecords
+} from '@/utils/borrowStats'
 
 const borrowStore = useBorrowStore()
+const filterStore = useBorrowFilterStore()
 const readerStore = useReaderStore()
 const bookStore = useBookStore()
+const categoryStore = useCategoryStore()
 
-const loading = ref(false)
-const searchKeyword = ref('')
-const selectedStatus = ref(null)
-const dateRange = ref(null)
 const borrowModalVisible = ref(false)
 const submitLoading = ref(false)
 const borrowFormRef = ref(null)
@@ -334,14 +437,15 @@ const tableAnimating = ref(false)
 let searchTimeout = null
 
 const columns = [
-  { title: '读者信息', key: 'reader', width: 160 },
+  { title: '读者信息', key: 'reader', width: 150 },
   { title: '图书信息', key: 'book', width: 200 },
+  { title: '分类', key: 'category', width: 100 },
   { title: '借阅日期', dataIndex: 'borrowDate', key: 'borrowDate', width: 110 },
   { title: '应还日期', dataIndex: 'dueDate', key: 'dueDate', width: 110 },
   { title: '归还日期', dataIndex: 'returnDate', key: 'returnDate', width: 110 },
   { title: '续借次数', dataIndex: 'renewCount', key: 'renewCount', width: 90 },
   { title: '状态', key: 'status', width: 90 },
-  { title: '操作', key: 'action', width: 140, fixed: 'right' }
+  { title: '操作', key: 'action', width: 210, fixed: 'right' }
 ]
 
 const borrowForm = reactive({
@@ -354,65 +458,62 @@ const borrowRules = {
   bookId: [{ required: true, message: '请选择图书' }]
 }
 
-const hasFilters = computed(() => {
-  return searchKeyword.value || selectedStatus.value || dateRange.value
+const deleteConfirmText = '确定删除'
+
+// 分类归属统一来自图书当前数据（bookId -> categoryId），
+// 而不是借阅记录上的冗余快照，删除/切换分类后归属立即一致。
+const categoryOfBook = computed(() => {
+  const map = new Map()
+  for (const book of bookStore.books) {
+    map.set(book.id, book.categoryId)
+  }
+  return map
 })
 
+// 统一过滤结果：卡片、逾期分布、明细列表全部使用它
 const filteredRecords = computed(() => {
-  let result = borrowStore.records
-
-  if (searchKeyword.value) {
-    const keyword = searchKeyword.value.toLowerCase()
-    result = result.filter(record =>
-      record.readerName.toLowerCase().includes(keyword) ||
-      record.bookTitle.toLowerCase().includes(keyword) ||
-      record.cardNo.toLowerCase().includes(keyword)
-    )
-  }
-
-  if (selectedStatus.value) {
-    result = result.filter(record => record.status === selectedStatus.value)
-  }
-
-  if (dateRange.value && dateRange.value.length === 2) {
-    const startDate = dateRange.value[0].format('YYYY-MM-DD')
-    const endDate = dateRange.value[1].format('YYYY-MM-DD')
-    result = result.filter(record => {
-      return record.borrowDate >= startDate && record.borrowDate <= endDate
-    })
-  }
-
-  return result
+  if (borrowStore.loadError) return []
+  return filterBorrowRecords(borrowStore.records, {
+    keyword: filterStore.keyword,
+    status: filterStore.status,
+    dateRange: filterStore.dateRange,
+    categoryId: filterStore.categoryId
+  }, categoryOfBook.value)
 })
 
-const filteredTotalBorrowed = computed(() => {
-  return filteredRecords.value.filter(r => r.status === 'borrowed').length
-})
-
-const filteredTotalOverdue = computed(() => {
-  return filteredRecords.value.filter(r => r.status === 'overdue').length
-})
-
-const returnedCount = computed(() => {
-  return filteredRecords.value.filter(r => r.status === 'returned').length
-})
-
-const todayBorrowCount = computed(() => {
-  const today = new Date().toISOString().split('T')[0]
-  return filteredRecords.value.filter(r => r.borrowDate === today).length
-})
+// 统一汇总：所有数字都从这一个 summary 读取
+const summary = computed(() => summarizeRecords(filteredRecords.value))
 
 const borrowedPercent = computed(() => {
-  const total = filteredRecords.value.length
+  const total = summary.value.total
   if (total === 0) return 0
-  return Math.round((filteredTotalBorrowed.value / total) * 100)
+  return Math.round((summary.value.borrowed / total) * 100)
 })
 
 const returnedPercent = computed(() => {
-  const total = filteredRecords.value.length
+  const total = summary.value.total
   if (total === 0) return 0
-  return Math.round((returnedCount.value / total) * 100)
+  return Math.round((summary.value.returned / total) * 100)
 })
+
+function overdueBucketPercent(count) {
+  if (summary.value.overdue === 0) return 0
+  return Math.round((count / summary.value.overdue) * 100)
+}
+
+function categoryNameOf(bookId) {
+  const categoryId = categoryOfBook.value.get(bookId)
+  const cat = categoryStore.getCategoryById(categoryId)
+  return cat ? cat.name : '未分类'
+}
+
+// 表格空态：区分“有筛选但无匹配”与“完全没有借阅记录”
+const tableLocale = computed(() => ({
+  emptyText: h(Empty, {
+    image: Empty.PRESENTED_IMAGE_SIMPLE,
+    description: filterStore.hasFilter ? '当前筛选条件下暂无借阅记录' : '暂无借阅记录'
+  })
+}))
 
 const availableReaders = computed(() => {
   return readerStore.readers.filter(r =>
@@ -424,24 +525,6 @@ const availableBooks = computed(() => {
   return bookStore.books.filter(b => b.available > 0)
 })
 
-function getStatusColor(status) {
-  const colors = {
-    borrowed: 'processing',
-    returned: 'success',
-    overdue: 'error'
-  }
-  return colors[status] || 'default'
-}
-
-function getStatusText(status) {
-  const texts = {
-    borrowed: '借阅中',
-    returned: '已归还',
-    overdue: '已逾期'
-  }
-  return texts[status] || status
-}
-
 function filterReader(input, option) {
   return option.label.toLowerCase().includes(input.toLowerCase())
 }
@@ -450,49 +533,71 @@ function filterBook(input, option) {
   return option.label.toLowerCase().includes(input.toLowerCase())
 }
 
-function handleStatusChange() {
-  triggerSearchAnimation()
-}
-
-function handleDateRangeChange() {
-  triggerSearchAnimation()
-}
-
-// 搜索输入时的动画效果
-function onSearchInput() {
-  isSearching.value = true
-  
-  if (searchTimeout) {
-    clearTimeout(searchTimeout)
-  }
-  
+// 切换筛选时仅做短暂的加载反馈，不改变统计口径
+function triggerSearchAnimation() {
+  tableAnimating.value = true
+  if (searchTimeout) clearTimeout(searchTimeout)
   searchTimeout = setTimeout(() => {
-    isSearching.value = false
-    triggerSearchAnimation()
+    tableAnimating.value = false
   }, 300)
 }
 
-// 触发表格搜索动画和loading
-function triggerSearchAnimation() {
-  loading.value = true
-  tableAnimating.value = true
-  setTimeout(() => {
-    tableAnimating.value = false
-    loading.value = false
-  }, 600)
+function handleStatusChange(val) {
+  filterStore.setStatus(val)
+  triggerSearchAnimation()
 }
 
-// 清除筛选
+function handleCategoryChange(val) {
+  filterStore.setCategoryId(val)
+  triggerSearchAnimation()
+}
+
+function handleDateRangeChange(dates) {
+  filterStore.setDateRange(dates)
+  triggerSearchAnimation()
+}
+
+// 关键词变化：更新共享筛选条件（防抖只作用于加载动画）
+function onKeywordInput(val) {
+  filterStore.setKeyword(val)
+  isSearching.value = true
+
+  if (searchTimeout) {
+    clearTimeout(searchTimeout)
+  }
+
+  searchTimeout = setTimeout(() => {
+    isSearching.value = false
+    tableAnimating.value = false
+  }, 300)
+}
+
+// 清除筛选（条件保存在共享 store 中，此处清空后所有入口同步）
 function clearFilters() {
-  searchKeyword.value = ''
-  selectedStatus.value = null
-  dateRange.value = null
+  filterStore.clearAll()
+  triggerSearchAnimation()
+}
+
+// 点击逾期分布桶：快捷切换“已逾期”状态筛选，便于核对数量
+function toggleOverdueBucket() {
+  if (filterStore.status === 'overdue') {
+    filterStore.setStatus(null)
+  } else {
+    filterStore.setStatus('overdue')
+  }
   triggerSearchAnimation()
 }
 
 // 获取行样式类名
 function getRowClassName(record, index) {
   return `table-row-animate row-${index}`
+}
+
+function resetToDefault() {
+  localStorage.removeItem('library_borrow_records')
+  borrowStore.records.splice(0, borrowStore.records.length, ...defaultRecords)
+  borrowStore.loadError = false
+  message.success('已恢复默认借阅数据')
 }
 
 function handleModalClose() {
@@ -570,6 +675,31 @@ function handleRenew(record) {
     message.error('续借失败，已达到最大续借次数')
   }
 }
+
+// 删除借阅记录：若书尚未归还，同步回补库存和读者在借数，
+// 保证其他页面的数字也对得上。
+function handleDelete(record) {
+  const wasActive = effectiveStatus(record) !== 'returned'
+
+  const ok = borrowStore.deleteRecord(record.id)
+  if (!ok) {
+    message.error('删除失败，记录不存在')
+    return
+  }
+
+  if (wasActive) {
+    const book = bookStore.getBookById(record.bookId)
+    const reader = readerStore.getReaderById(record.readerId)
+    if (book) {
+      bookStore.updateBook(book.id, { available: Math.min(book.total, book.available + 1) })
+    }
+    if (reader) {
+      readerStore.updateReader(reader.id, { borrowCount: Math.max(0, reader.borrowCount - 1) })
+    }
+  }
+
+  message.success('借阅记录已删除')
+}
 </script>
 
 <style lang="less" scoped>
@@ -580,6 +710,11 @@ function handleRenew(record) {
     color: #1a1a1a;
     margin-bottom: 24px;
   }
+}
+
+.error-alert {
+  margin-bottom: 16px;
+  border-radius: 12px;
 }
 
 .stat-row {
@@ -663,8 +798,8 @@ function handleRenew(record) {
       align-items: center;
       justify-content: center;
       font-size: 14px;
-      background: #e6f7ff;
-      color: #1890ff;
+      background: #f5f5f5;
+      color: #999;
 
       &.success {
         background: #f6ffed;
@@ -717,6 +852,84 @@ function handleRenew(record) {
       display: flex;
       align-items: center;
       gap: 4px;
+    }
+  }
+}
+
+// 逾期分布面板
+.overdue-panel {
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  padding: 16px 20px;
+  margin-bottom: 16px;
+
+  .overdue-panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .overdue-panel-title {
+    font-size: 15px;
+    font-weight: 600;
+    color: #1a1a1a;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .overdue-panel-total {
+    font-size: 12px;
+    font-weight: 400;
+    color: #ff4d4f;
+    background: #fff1f0;
+    border-radius: 10px;
+    padding: 2px 8px;
+  }
+
+  .overdue-panel-hint {
+    font-size: 12px;
+    color: #999;
+  }
+
+  .overdue-bucket {
+    border: 1px solid #f0f0f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    height: 100%;
+
+    &:hover {
+      border-color: #ffa39e;
+      background: #fff8f7;
+    }
+
+    &.active {
+      border-color: #ff4d4f;
+      background: #fff1f0;
+    }
+
+    .overdue-bucket-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .overdue-bucket-label {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .overdue-bucket-count {
+      font-size: 20px;
+      font-weight: 700;
     }
   }
 }
@@ -808,48 +1021,48 @@ function handleRenew(record) {
   padding: 20px;
   margin-bottom: 16px;
   transition: all 0.3s ease;
-  
+
   &:hover {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   }
-  
+
   .search-input-wrapper {
     position: relative;
-    
+
     .search-input {
       transition: all 0.3s ease;
-      
+
       &:focus-within {
         box-shadow: 0 0 0 2px rgba(250, 173, 20, 0.2);
       }
     }
-    
+
     .search-icon {
       color: rgba(0, 0, 0, 0.45);
       cursor: pointer;
       transition: all 0.3s ease;
-      
+
       &:hover {
         color: #faad14;
         transform: scale(1.1);
       }
-      
+
       &.searching {
         animation: pulse 0.5s ease-in-out infinite;
         color: #faad14;
       }
     }
   }
-  
+
   .add-btn {
     transition: all 0.3s ease;
-    
+
     &:hover {
       transform: translateY(-2px);
       box-shadow: 0 4px 12px rgba(24, 144, 255, 0.4);
     }
   }
-  
+
   .filter-hint {
     font-size: 13px;
     color: #999;
@@ -857,7 +1070,7 @@ function handleRenew(record) {
     align-items: center;
     gap: 4px;
   }
-  
+
   .search-result-tip {
     margin-top: 16px;
     padding-top: 16px;
@@ -865,21 +1078,21 @@ function handleRenew(record) {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    
+
     .result-count {
       color: #666;
       font-size: 13px;
-      
+
       strong {
         color: #faad14;
         font-size: 16px;
         margin: 0 4px;
       }
     }
-    
+
     .clear-btn {
       font-size: 13px;
-      
+
       &:hover {
         color: #ff4d4f;
       }
@@ -894,18 +1107,18 @@ function handleRenew(record) {
   padding: 20px;
   position: relative;
   transition: all 0.3s ease;
-  
+
   &:hover {
     box-shadow: 0 4px 16px rgba(0, 0, 0, 0.1);
   }
-  
+
   &.table-loading {
     .ant-table {
       filter: blur(2px);
       pointer-events: none;
     }
   }
-  
+
   .table-loading-overlay {
     position: absolute;
     top: 0;
@@ -918,13 +1131,13 @@ function handleRenew(record) {
     justify-content: center;
     z-index: 10;
     border-radius: 12px;
-    
+
     .loading-spinner {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 12px;
-      
+
       .spinner-ring {
         width: 40px;
         height: 40px;
@@ -933,7 +1146,7 @@ function handleRenew(record) {
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
       }
-      
+
       span {
         color: #faad14;
         font-size: 14px;
@@ -962,7 +1175,7 @@ function handleRenew(record) {
       background: #e6f7ff;
     }
   }
-  
+
   .completed-text {
     color: #52c41a;
     font-size: 12px;
